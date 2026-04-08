@@ -1,0 +1,24 @@
+{
+  "name": "epubreader",
+  "version": "1.0.0",
+  "description": "A simple, aesthetically pleasing EPUB and TXT file reader for reading novels, built with plain HTML, CSS, and JavaScript.",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Shinoaki798/epubReader.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Shinoaki798/epubReader/issues"
+  },
+  "homepage": "https://github.com/Shinoaki798/epubReader#readme",
+  "dependencies": {
+    "jszip": "^3.10.1"
+  }
+}

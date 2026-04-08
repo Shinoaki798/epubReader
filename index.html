@@ -4,6 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>epubReader</title>
+  <!-- Font CDNs -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500&family=Noto+Serif+SC:wght@400;500&display=swap">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-lite-webfont@1.1.0/style.css">
+  
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body class="light">
@@ -32,8 +36,28 @@
     <!-- Top toolbar -->
     <header class="toolbar">
       <button id="btn-back" class="icon-btn" title="Back to file picker" aria-label="Back">&#8592;</button>
+      <button id="btn-toc-toggle" class="icon-btn" title="Table of Contents" aria-label="Table of Contents">&#9776;</button>
       <span id="book-title" class="book-title"></span>
       <div class="toolbar-right">
+        <select id="font-family-select" class="toolbar-select" title="Change Font">
+          <option value="'LXGW WenKai Lite', 'KaiTi', serif">霞鹜文楷 (LXGW WenKai)</option>
+          <option value="'Noto Sans SC', 'Microsoft YaHei', sans-serif">思源黑体 (Noto Sans SC)</option>
+          <option value="'Noto Serif SC', 'SimSun', serif">思源宋体 (Noto Serif SC)</option>
+          <option value="Georgia, 'Times New Roman', serif">Serif (系统默认衬线)</option>
+        </select>
+
+        <div class="slider-container" title="Line Spacing">
+          <span class="slider-icon">↕</span>
+          <input type="range" id="line-spacing-slider" min="1.0" max="3.0" step="0.1" value="1.85" />
+        </div>
+
+        <div class="slider-container" title="Content Width">
+          <span class="slider-icon">↔</span>
+          <input type="range" id="width-slider" min="400" max="2400" step="50" value="720" />
+        </div>
+
+        <button id="btn-view-mode" class="icon-btn" title="Toggle Scroll/Page mode" aria-label="Toggle Scroll">📄</button>
+        
         <button id="btn-font-dec" class="icon-btn" title="Decrease font size" aria-label="Decrease font size">A&#8722;</button>
         <button id="btn-font-inc" class="icon-btn" title="Increase font size" aria-label="Increase font size">A&#43;</button>
         <button id="btn-theme" class="icon-btn" title="Toggle dark/light mode" aria-label="Toggle theme">🌙</button>
@@ -43,6 +67,18 @@
     <!-- EPUB viewer (epub.js renders here) -->
     <div id="epub-viewer" class="viewer hidden"></div>
 
+    <!-- TOC overlay (click to close) -->
+    <div id="toc-overlay" class="toc-overlay"></div>
+
+    <!-- TOC Sidebar -->
+    <div id="toc-sidebar" class="sidebar">
+      <div class="sidebar-header">
+        <h3>Table of Contents</h3>
+        <button id="btn-toc-close" class="icon-btn" aria-label="Close Sidebar">&times;</button>
+      </div>
+      <ul id="toc-list" class="toc-list"></ul>
+    </div>
+
     <!-- TXT viewer -->
     <div id="txt-viewer" class="viewer hidden">
       <div id="txt-content" class="txt-content"></div>
@@ -51,7 +87,10 @@
     <!-- EPUB navigation arrows -->
     <div id="epub-nav" class="nav-bar hidden">
       <button id="btn-prev" class="nav-btn" aria-label="Previous page">&#8249;</button>
-      <span id="page-info" class="page-info"></span>
+      <div class="progress-container">
+        <input type="range" id="progress-slider" class="progress-slider" min="0" max="100" step="0.1" value="0" disabled title="Reading Progress" />
+        <span id="page-info" class="page-info">0%</span>
+      </div>
       <button id="btn-next" class="nav-btn" aria-label="Next page">&#8250;</button>
     </div>
   </div>

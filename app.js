@@ -29,32 +29,120 @@ const btnNext = document.getElementById("btn-next");
 const pageInfo = document.getElementById("page-info");
 const progressSlider = document.getElementById("progress-slider");
 
+const btnFileTreeToggle = document.getElementById("btn-file-tree-toggle");
+const fileTreeSidebar = document.getElementById("file-tree-sidebar");
+const btnFileTreeClose = document.getElementById("btn-file-tree-close");
+const fileTreeList = document.getElementById("file-tree-list");
+
 // ── State ────────────────────────────────────────────────────────────────────
 let currentBook = null; // epub.js Book
 let currentRendition = null; // epub.js Rendition
 let currentEpubLocation = null; // To restore loc when switching flow
-let fontSize = 18; // px, applies to both epub & txt
+let currentFile = null; // File object — key for localStorage position save
+let fontSize = 24; // px, applies to both epub & txt
 let isDark = false;
 let currentFontFamily = "'LXGW WenKai Lite', 'KaiTi', serif";
 let currentLineHeight = 1.85;
 let currentMaxWidth = 720;
-let isScrollMode = false; // By default Paginated
-let isGeneratingLocations = false; // Prevents jumping during calc
+let isScrollMode = true; // By default scrolled
+let scrollProgressUnlisten = null; // Cleanup fn for scroll-mode progress listener
 
 const FONT_SIZE_MIN = 12;
 const FONT_SIZE_MAX = 36;
 const FONT_SIZE_STEP = 2;
+
+// ── Style injection helpers ──────────────────────────────────────────────────
+// Directly inject a <style> element into each epub iframe so that !important
+// rules reliably override book-level CSS (themes.override only sets body inline
+// styles, which don't cascade into child elements that have their own rules).
+function buildCustomCss() {
+  const textColor = isDark ? "#e8e4de" : "#2c2b28";
+  const bgColor = isDark ? "#252320" : "#ffffff";
+  return `
+* {
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+html, body, p, div, span, li, blockquote, td, th,
+h1, h2, h3, h4, h5, h6, rt, ruby {
+  line-height: ${currentLineHeight} !important;
+  font-family: ${currentFontFamily} !important;
+  word-wrap: break-word !important;
+}
+html { font-size: ${fontSize}px !important; }
+html, body {
+  color: ${textColor} !important;
+  background: ${bgColor} !important;
+  margin: 0 auto !important;
+  padding: 0 !important;
+}
+body {
+  padding: 0 16px !important;
+}`;
+}
+
+function injectCustomStyles() {
+  if (!currentRendition) return;
+  const css = buildCustomCss();
+  currentRendition.getContents().forEach((contents) => {
+    if (!contents || !contents.document) return;
+    let el = contents.document.getElementById("reader-custom-style");
+    if (!el) {
+      el = contents.document.createElement("style");
+      el.id = "reader-custom-style";
+      contents.document.head.appendChild(el);
+    }
+    el.textContent = css;
+  });
+}
+
+// ── Scroll-mode chapter progress listener ───────────────────────────────────
+function setupScrollProgressListener() {
+  if (scrollProgressUnlisten) {
+    scrollProgressUnlisten();
+    scrollProgressUnlisten = null;
+  }
+  if (!currentRendition || !isScrollMode) return;
+  const container =
+    currentRendition.manager && currentRendition.manager.container;
+  if (!container) return;
+
+  function onScroll() {
+    const max = container.scrollHeight - container.clientHeight;
+    if (max <= 0) {
+      progressSlider.value = 0;
+      pageInfo.textContent = "0%";
+      return;
+    }
+    const val = Math.round((container.scrollTop / max) * 1000) / 10;
+    progressSlider.value = val;
+    pageInfo.textContent = `${val}%`;
+  }
+
+  container.addEventListener("scroll", onScroll, { passive: true });
+  scrollProgressUnlisten = () =>
+    container.removeEventListener("scroll", onScroll);
+}
+
+// ── localStorage helpers ─────────────────────────────────────────────────────
+function storageKey(file) {
+  return "epubReader_pos_" + file.name + "_" + file.size;
+}
+
+function debounce(fn, ms) {
+  let t;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
+}
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 function applyTheme() {
   body.classList.toggle("dark", isDark);
   btnTheme.textContent = isDark ? "☀️" : "🌙";
   if (currentRendition) {
-    currentRendition.themes.override("color", isDark ? "#e8e4de" : "#2c2b28");
-    currentRendition.themes.override(
-      "background",
-      isDark ? "#252320" : "#ffffff",
-    );
+    injectCustomStyles();
   }
 }
 
@@ -65,16 +153,22 @@ btnTheme.addEventListener("click", () => {
 
 // ── Font size ────────────────────────────────────────────────────────────────
 function applyFontSize() {
-  const cfi = currentRendition?.currentLocation()?.start?.cfi;
-
   if (currentRendition) {
-    currentRendition.themes.fontSize(`${fontSize}px`);
-    setTimeout(() => {
-      if (currentRendition && cfi) {
-        currentRendition.resize();
-        currentRendition.display(cfi);
-      }
-    }, 150);
+    const cfi = currentRendition.currentLocation()?.start?.cfi;
+    injectCustomStyles();
+    // Paginated: re-paginate after font size change. Scroll: resize only (no display snap-back).
+    if (!isScrollMode) {
+      setTimeout(() => {
+        if (currentRendition && cfi) {
+          currentRendition.resize();
+          currentRendition.display(cfi);
+        }
+      }, 150);
+    } else {
+      setTimeout(() => {
+        if (currentRendition) currentRendition.resize();
+      }, 150);
+    }
   }
   txtContent.style.fontSize = `${fontSize}px`;
 }
@@ -95,9 +189,6 @@ btnFontInc.addEventListener("click", () => {
 
 // ── Font & Line Spacing ──────────────────────────────────────────────────────
 function applyFontSettings() {
-  // Capture current location before applying settings
-  const cfi = currentRendition?.currentLocation()?.start?.cfi;
-
   document.documentElement.style.setProperty(
     "--font-family",
     currentFontFamily,
@@ -112,16 +203,21 @@ function applyFontSettings() {
   );
 
   if (currentRendition) {
-    currentRendition.themes.override("font-family", currentFontFamily);
-    currentRendition.themes.override("line-height", `${currentLineHeight}`);
-
-    // Give DOM time to reflow, then restore the exact location
-    setTimeout(() => {
-      if (currentRendition && cfi) {
-        currentRendition.resize();
-        currentRendition.display(cfi);
-      }
-    }, 150);
+    const cfi = currentRendition.currentLocation()?.start?.cfi;
+    injectCustomStyles();
+    // Paginated: re-paginate after layout change. Scroll: resize only (no display snap-back).
+    if (!isScrollMode) {
+      setTimeout(() => {
+        if (currentRendition && cfi) {
+          currentRendition.resize();
+          currentRendition.display(cfi);
+        }
+      }, 150);
+    } else {
+      setTimeout(() => {
+        if (currentRendition) currentRendition.resize();
+      }, 150);
+    }
   }
 
   txtContent.style.fontFamily = currentFontFamily;
@@ -173,7 +269,9 @@ function showReader() {
   readerScreen.classList.add("active");
 }
 
-// ── Drop zone / file picker ──────────────────────────────────────────────────
+document.addEventListener("dragover", (e) => e.preventDefault());
+document.addEventListener("drop", (e) => e.preventDefault());
+
 dropZone.addEventListener("click", () => fileInput.click());
 dropZone.addEventListener("keydown", (e) => {
   if (e.key === "Enter" || e.key === " ") {
@@ -189,12 +287,130 @@ dropZone.addEventListener("dragover", (e) => {
 dropZone.addEventListener("dragleave", () =>
   dropZone.classList.remove("drag-over"),
 );
-dropZone.addEventListener("drop", (e) => {
+dropZone.addEventListener("drop", async (e) => {
   e.preventDefault();
   dropZone.classList.remove("drag-over");
-  const file = e.dataTransfer.files[0];
-  if (file) handleFile(file);
+
+  if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+    const items = e.dataTransfer.items;
+    const entries = [];
+    for (let i = 0; i < items.length; i++) {
+      const entry = items[i].webkitGetAsEntry && items[i].webkitGetAsEntry();
+      if (entry) entries.push(entry);
+    }
+
+    const nodes = [];
+    if (entries.length > 0) {
+      errorMsg.textContent = "Scanning files, please wait...";
+      errorMsg.classList.remove("hidden");
+    }
+
+    const results = await Promise.all(entries.map((entry) => scanEntry(entry)));
+    for (const result of results) {
+      if (result) nodes.push(result);
+    }
+
+    if (nodes.length > 0) {
+      errorMsg.classList.add("hidden");
+      btnFileTreeToggle.classList.remove("hidden");
+      renderFileTree(nodes, fileTreeList);
+      const firstFile = findFirstFile(nodes);
+      if (firstFile) handleFile(firstFile);
+    } else {
+      showError("No EPUB or TXT files found in the dropped content.");
+    }
+  } else {
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  }
 });
+
+// Recursively scan dropped items
+async function scanEntry(entry) {
+  if (entry.isFile) {
+    return new Promise((resolve) => {
+      entry.file(
+        (file) => {
+          const n = file.name.toLowerCase();
+          if (n.endsWith(".epub") || n.endsWith(".txt")) {
+            resolve({ name: file.name, isDir: false, file: file });
+          } else resolve(null);
+        },
+        (err) => resolve(null),
+      );
+    });
+  } else if (entry.isDirectory) {
+    const reader = entry.createReader();
+    const entries = await new Promise((resolve) => {
+      let all = [];
+      function read() {
+        reader.readEntries(
+          (res) => {
+            if (res.length === 0) resolve(all);
+            else {
+              all.push(...res);
+              read();
+            }
+          },
+          (err) => resolve(all),
+        );
+      }
+      read();
+    });
+    const children = [];
+    const childResults = await Promise.all(
+      entries.map((childEntry) => scanEntry(childEntry)),
+    );
+    for (const child of childResults) {
+      if (child) children.push(child);
+    }
+    if (children.length > 0) return { name: entry.name, isDir: true, children };
+    return null;
+  }
+  return null;
+}
+
+function renderFileTree(nodes, container) {
+  container.innerHTML = "";
+  nodes.forEach((node) => {
+    const li = document.createElement("li");
+    if (node.isDir) {
+      const span = document.createElement("span");
+      span.textContent = "📁 " + node.name;
+      span.className = "folder-label";
+      span.title = node.name;
+      span.onclick = () => {
+        const ul = li.querySelector("ul");
+        if (ul) ul.classList.toggle("hidden");
+      };
+      li.appendChild(span);
+      const ul = document.createElement("ul");
+      renderFileTree(node.children, ul);
+      li.appendChild(ul);
+    } else {
+      const a = document.createElement("a");
+      a.title = node.name;
+      a.textContent =
+        (node.name.toLowerCase().endsWith(".epub") ? "📘 " : "📄 ") + node.name;
+      a.onclick = () => {
+        fileTreeSidebar.classList.remove("active");
+        if (tocOverlay) tocOverlay.classList.remove("active");
+        handleFile(node.file);
+      };
+      li.appendChild(a);
+    }
+    container.appendChild(li);
+  });
+}
+
+function findFirstFile(nodes) {
+  for (let n of nodes) {
+    if (!n.isDir) return n.file;
+    const childFile = findFirstFile(n.children);
+    if (childFile) return childFile;
+  }
+  return null;
+}
 
 fileInput.addEventListener("change", () => {
   if (fileInput.files.length) handleFile(fileInput.files[0]);
@@ -220,6 +436,11 @@ function showError(msg) {
 
 // ── Clean up previous book ───────────────────────────────────────────────────
 function destroyCurrentBook() {
+  if (scrollProgressUnlisten) {
+    scrollProgressUnlisten();
+    scrollProgressUnlisten = null;
+  }
+  currentFile = null;
   if (currentRendition) {
     currentRendition.destroy();
     currentRendition = null;
@@ -243,6 +464,7 @@ function destroyCurrentBook() {
 // ── EPUB loader ──────────────────────────────────────────────────────────────
 function loadEpub(file) {
   destroyCurrentBook();
+  currentFile = file; // set after destroy so destroy's null-clear doesn't erase it
 
   const reader = new FileReader();
   reader.onload = (e) => {
@@ -262,6 +484,10 @@ function loadEpub(file) {
         document.title = `${meta.title || file.name} – epubReader`;
       });
 
+      // Restore saved reading position (if any)
+      const savedCfi = localStorage.getItem(storageKey(file));
+      currentEpubLocation = savedCfi || null;
+
       renderEpubBook(book);
 
       epubViewer.classList.remove("hidden");
@@ -278,8 +504,12 @@ function loadEpub(file) {
 
 function renderEpubBook(book) {
   if (currentRendition) {
-    // Save current location before re-rendering
+    // Save current location and clean up before re-rendering
     currentEpubLocation = currentRendition.currentLocation()?.start?.cfi;
+    if (scrollProgressUnlisten) {
+      scrollProgressUnlisten();
+      scrollProgressUnlisten = null;
+    }
     currentRendition.destroy();
     epubViewer.innerHTML = "";
   }
@@ -288,63 +518,60 @@ function renderEpubBook(book) {
     width: "100%",
     height: "100%",
     spread: "none",
-    manager: "continuous",
-    flow: isScrollMode ? "scrolled-doc" : "paginated",
+    // No manager = epub.js default (single chapter at a time).
+    // "continuous" was removed — it chained all chapters and caused scroll-back bugs.
+    flow: isScrollMode ? "scrolled" : "paginated",
   };
 
+  epubViewer.dataset.mode = isScrollMode ? "scrolled" : "paginated";
   const rendition = book.renderTo(epubViewer, opts);
   currentRendition = rendition;
 
   rendition.display(currentEpubLocation || undefined);
 
-  // Apply current font size & theme once ready
-  rendition.hooks.content.register(() => {
-    rendition.themes.fontSize(`${fontSize}px`);
-    rendition.themes.override("color", isDark ? "#e8e4de" : "#2c2b28");
-    rendition.themes.override("background", isDark ? "#252320" : "#ffffff");
-    rendition.themes.override("font-family", currentFontFamily);
-    rendition.themes.override("line-height", `${currentLineHeight}`);
-    // Let the container's CSS max-width control the width, rather than injecting styles into epub body
-    // which breaks the pagination columns in epub.js.
+  // Apply current font size & theme once ready.
+  // Use direct <style> injection with !important so book-level CSS is overridden.
+  rendition.hooks.content.register((contents) => {
+    if (!contents || !contents.document) return;
+    let styleEl = contents.document.getElementById("reader-custom-style");
+    if (!styleEl) {
+      styleEl = contents.document.createElement("style");
+      styleEl.id = "reader-custom-style";
+      contents.document.head.appendChild(styleEl);
+    }
+    styleEl.textContent = buildCustomCss();
   });
 
-  // Page info updates & TOC
+  // Enable slider and update progress immediately; generate locations in background
+  // for paginated seeking (not needed for progress display which uses displayed.page/total).
   book.ready.then(() => {
-    // Skip regeneration if locations are already built (e.g. view-mode switch)
-    if (book.locations && book.locations.total > 0) {
-      progressSlider.disabled = false;
-      progressSlider.title = "Drag to seek chapter";
-      updatePageInfo();
-    } else {
-      progressSlider.disabled = true;
-      pageInfo.textContent = "Calculating...";
-      isGeneratingLocations = true;
-
-      // Use full locations generation for 100% accurate percentage reporting
-      // Without this epub.js won't give accurate percentages.
+    progressSlider.disabled = false;
+    progressSlider.title = "Drag to seek within chapter";
+    updatePageInfo();
+    if (!book.locations || book.locations.total === 0) {
       book.locations
         .generate(1600)
-        .then(() => {
-          isGeneratingLocations = false;
-          progressSlider.disabled = false;
-          progressSlider.title = "Drag to seek chapter";
-          updatePageInfo();
-        })
-        .catch((e) => {
-          console.warn("Failed to generate locations", e);
-          isGeneratingLocations = false;
-          progressSlider.disabled = false;
-          updatePageInfo();
-        });
+        .catch((e) => console.warn("Location generation failed", e));
     }
-
-    // Load TOC
-    book.loaded.navigation.then((nav) => {
-      buildToc(nav.toc);
-    });
+    book.loaded.navigation.then((nav) => buildToc(nav.toc));
   });
 
-  rendition.on("relocated", (location) => updatePageInfo(location));
+  // Debounced save of current CFI to localStorage on every page turn
+  const debouncedSave = debounce((location) => {
+    if (currentFile && location?.start?.cfi) {
+      localStorage.setItem(storageKey(currentFile), location.start.cfi);
+    }
+  }, 1000);
+
+  rendition.on("relocated", (location) => {
+    updatePageInfo(location);
+    debouncedSave(location);
+  });
+
+  // In scroll mode, wire up the chapter scroll progress listener after each render
+  rendition.on("rendered", () => {
+    if (isScrollMode) setupScrollProgressListener();
+  });
 
   // Keyboard navigation
   document.removeEventListener("keydown", epubKeyHandler);
@@ -353,13 +580,9 @@ function renderEpubBook(book) {
   // Need to bind directly to rendition for when iframe is focused
   rendition.on("keyup", (event) => epubKeyHandler(event));
 
-  if (isScrollMode) {
-    btnPrev.classList.add("hidden");
-    btnNext.classList.add("hidden");
-  } else {
-    btnPrev.classList.remove("hidden");
-    btnNext.classList.remove("hidden");
-  }
+  // Always show prev/next — in scroll mode they navigate between chapters
+  btnPrev.classList.remove("hidden");
+  btnNext.classList.remove("hidden");
 
   epubNav.classList.remove("hidden");
   btnTocToggle.classList.remove("hidden");
@@ -368,27 +591,17 @@ function renderEpubBook(book) {
 }
 
 function updatePageInfo(location) {
-  if (!currentBook || !currentRendition || isGeneratingLocations) return;
+  if (!currentRendition) return;
+  // Scroll mode progress is driven by the iframe scroll listener, not by relocated event
+  if (isScrollMode) return;
   const loc = location || currentRendition.currentLocation();
   if (!loc || !loc.start) return;
-
   try {
-    if (currentBook.locations && currentBook.locations.total > 0) {
-      const percentage = currentBook.locations.percentageFromCfi(loc.start.cfi);
-      const val = Math.round(percentage * 1000) / 10;
-      pageInfo.textContent = `${val}%`;
-      // Update slider without triggering the 'change' event
-      progressSlider.value = val;
-    } else {
-      // Fallback if locations are not generated yet or failed
-      const spineItem = currentBook.spine.get(loc.start.cfi);
-      if (spineItem) {
-        const index = spineItem.index;
-        const max = Math.max(1, currentBook.spine.length - 1);
-        const val = Math.round((index / max) * 1000) / 10;
-        pageInfo.textContent = `${val}%`;
-        progressSlider.value = val;
-      }
+    const page = loc.start.displayed?.page;
+    const total = loc.start.displayed?.total;
+    if (page > 0 && total > 0) {
+      pageInfo.textContent = `${page} / ${total}`;
+      progressSlider.value = Math.round((page / total) * 1000) / 10;
     }
   } catch (e) {
     // Failsafe
@@ -409,25 +622,48 @@ btnPrev.addEventListener("click", () => {
 });
 
 progressSlider.addEventListener("change", (e) => {
-  if (!currentBook || isGeneratingLocations) return;
+  if (!currentRendition) return;
   const val = parseFloat(e.target.value);
-  const percentage = val / 100;
 
-  if (currentBook.locations && currentBook.locations.total > 0) {
-    const cfi = currentBook.locations.cfiFromPercentage(percentage);
-    if (cfi) currentRendition.display(cfi);
-  } else if (currentBook.spine) {
-    // Fallback if locations are unavailable
-    const max = Math.max(1, currentBook.spine.length - 1);
-    const targetIndex = Math.round(percentage * max);
-    try {
-      const targetSpine = currentBook.spine.get(targetIndex);
-      if (targetSpine && targetSpine.href) {
-        currentRendition.display(targetSpine.href);
-      }
-    } catch (err) {
-      console.error("Error seeking spine index", err);
+  if (isScrollMode) {
+    // Seek within the current chapter by setting the container scroll position directly
+    const container =
+      currentRendition.manager && currentRendition.manager.container;
+    if (container) {
+      container.scrollTop =
+        (val / 100) * (container.scrollHeight - container.clientHeight);
     }
+    return;
+  }
+
+  // Paginated: seek within the current chapter using spine-index-scoped CFI
+  const loc = currentRendition.currentLocation();
+  const spineItem = currentBook?.spine?.get(loc?.start?.cfi);
+  if (spineItem && currentBook.locations?.total > 0) {
+    // Approximate chapter CFI range from spine index position
+    const spineLen = Math.max(1, currentBook.spine.length);
+    const chapterStart = spineItem.index / spineLen;
+    const chapterEnd = (spineItem.index + 1) / spineLen;
+    const targetBookPct =
+      chapterStart + (val / 100) * (chapterEnd - chapterStart);
+    const clamped = Math.max(
+      chapterStart,
+      Math.min(chapterEnd - 0.0001, targetBookPct),
+    );
+    const cfi = currentBook.locations.cfiFromPercentage(clamped);
+    if (cfi) {
+      currentRendition.display(cfi);
+      return;
+    }
+  }
+  // Fallback: navigate by page offset (capped at 20 to avoid UI freeze)
+  const total = loc?.start?.displayed?.total || 1;
+  const curPage = loc?.start?.displayed?.page || 1;
+  const targetPage = Math.max(1, Math.round((val / 100) * total));
+  const diff = Math.max(-20, Math.min(20, targetPage - curPage));
+  for (let i = 0; i < Math.abs(diff); i++) {
+    if (diff > 0) currentRendition.next();
+    else currentRendition.prev();
   }
 });
 
@@ -475,6 +711,7 @@ function buildToc(tocArray) {
 function openToc() {
   tocSidebar.classList.add("active");
   tocOverlay.classList.add("active");
+  fileTreeSidebar.classList.remove("active");
 }
 
 function closeToc() {
@@ -491,11 +728,26 @@ btnTocToggle.addEventListener("click", () => {
 });
 
 btnTocClose.addEventListener("click", closeToc);
-tocOverlay.addEventListener("click", closeToc);
+tocOverlay.addEventListener("click", () => {
+  closeToc();
+  fileTreeSidebar.classList.remove("active");
+});
+
+btnFileTreeToggle.addEventListener("click", () => {
+  closeToc(); // close TOC if open
+  const isActive = fileTreeSidebar.classList.toggle("active");
+  tocOverlay.classList.toggle("active", isActive);
+});
+
+btnFileTreeClose.addEventListener("click", () => {
+  fileTreeSidebar.classList.remove("active");
+  tocOverlay.classList.remove("active");
+});
 
 // ── TXT loader ───────────────────────────────────────────────────────────────
 function loadTxt(file) {
   destroyCurrentBook();
+  currentFile = file; // set after destroy so destroy's null-clear doesn't erase it
 
   const reader = new FileReader();
   reader.onload = (e) => {
@@ -519,7 +771,20 @@ function loadTxt(file) {
     txtViewer.classList.remove("hidden");
     btnTocToggle.classList.add("hidden");
     showReader();
+
+    // Restore saved scroll position after layout settles
+    requestAnimationFrame(() => {
+      const saved = localStorage.getItem(storageKey(file));
+      if (saved) txtViewer.scrollTop = parseInt(saved, 10) || 0;
+    });
   };
   reader.onerror = () => showError("Failed to read the file.");
   reader.readAsArrayBuffer(file);
 }
+
+// Save TXT scroll position to localStorage (debounced, top-level listener)
+const debouncedTxtSave = debounce(() => {
+  if (currentFile)
+    localStorage.setItem(storageKey(currentFile), txtViewer.scrollTop);
+}, 1000);
+txtViewer.addEventListener("scroll", debouncedTxtSave, { passive: true });

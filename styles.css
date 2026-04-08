@@ -157,7 +157,10 @@ html, body {
 }
 
 .book-title {
-  flex: 1;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 340px); /* clearance for left buttons + right toolbar group */
   font-size: 1rem;
   font-weight: 500;
   color: var(--text);
@@ -166,7 +169,7 @@ html, body {
   text-overflow: ellipsis;
   text-align: center;
   font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
-  padding: 0 10px;
+  pointer-events: none;
 }
 
 .toolbar-right {
@@ -273,6 +276,35 @@ html, body {
   color: var(--accent);
 }
 
+.file-tree {
+  flex: 1;
+  overflow-y: auto;
+  list-style: none;
+  padding: 10px 0;
+  margin: 0;
+}
+.file-tree ul {
+  list-style: none;
+  padding-left: 20px;
+  margin: 0;
+}
+.file-tree li a, .file-tree li .folder-label {
+  display: block;
+  padding: 8px 16px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.95rem;
+  transition: background 0.15s, color 0.15s;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.file-tree li a:hover, .file-tree li .folder-label:hover {
+  background: rgba(var(--accent-rgb), 0.1);
+  color: var(--accent);
+}
+
 .slider-container {
   display: flex;
   align-items: center;
@@ -310,6 +342,12 @@ html, body {
   max-width: var(--max-width);
   margin: 0 auto;
   padding: 0 20px;
+  overflow: hidden;
+}
+
+/* Fix horizontal scrollbar in scroll mode */
+#epub-viewer[data-mode="scrolled"] .epub-container {
+  overflow-x: hidden !important;
 }
 
 /* epub.js renders an iframe inside — make it fill the area */
@@ -424,4 +462,5 @@ html, body {
   .landing-card { padding: 32px 20px 28px; }
   .logo { font-size: 1.6rem; }
   .icon-btn { padding: 5px 8px; }
+  .book-title { display: none; }
 }

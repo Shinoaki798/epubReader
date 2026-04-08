@@ -19,9 +19,9 @@
       <p class="tagline">A simple, beautiful reader for EPUB &amp; TXT novels</p>
 
       <div id="drop-zone" class="drop-zone" role="button" tabindex="0"
-           aria-label="Drop a file here or click to choose">
+           aria-label="Drop a file or folder here or click to choose">
         <div class="drop-icon">⬆</div>
-        <p>Drop your <strong>.epub</strong> or <strong>.txt</strong> file here</p>
+        <p>Drop your <strong>.epub</strong> / <strong>.txt</strong> file or a <strong>Folder</strong> here</p>
         <p class="sub">or click to browse</p>
       </div>
       <input id="file-input" type="file" accept=".epub,.txt" hidden />
@@ -36,14 +36,19 @@
     <!-- Top toolbar -->
     <header class="toolbar">
       <button id="btn-back" class="icon-btn" title="Back to file picker" aria-label="Back">&#8592;</button>
+      <button id="btn-file-tree-toggle" class="icon-btn hidden" title="File Tree" aria-label="File Tree">📁</button>
       <button id="btn-toc-toggle" class="icon-btn" title="Table of Contents" aria-label="Table of Contents">&#9776;</button>
       <span id="book-title" class="book-title"></span>
       <div class="toolbar-right">
         <select id="font-family-select" class="toolbar-select" title="Change Font">
-          <option value="'LXGW WenKai Lite', 'KaiTi', serif">霞鹜文楷 (LXGW WenKai)</option>
-          <option value="'Noto Sans SC', 'Microsoft YaHei', sans-serif">思源黑体 (Noto Sans SC)</option>
-          <option value="'Noto Serif SC', 'SimSun', serif">思源宋体 (Noto Serif SC)</option>
-          <option value="Georgia, 'Times New Roman', serif">Serif (系统默认衬线)</option>
+          <option value="'LXGW WenKai Lite', 'KaiTi', serif">霞鹜文楷</option>
+          <option value="'Noto Sans SC', 'Microsoft YaHei', sans-serif">思源黑体</option>
+          <option value="'Noto Serif SC', 'SimSun', serif">思源宋体</option>
+          <option value="'FangSong', 'STFangsong', serif">仿宋</option>
+          <option value="'SimHei', 'Microsoft YaHei', sans-serif">黑体</option>
+          <option value="'KaiTi', 'STKaiti', serif">楷体</option>
+          <option value="'SimSun', 'NSimSun', serif">宋体</option>
+          <option value="Georgia, 'Times New Roman', serif">系统默认衬线</option>
         </select>
 
         <div class="slider-container" title="Line Spacing">
@@ -56,7 +61,7 @@
           <input type="range" id="width-slider" min="400" max="2400" step="50" value="720" />
         </div>
 
-        <button id="btn-view-mode" class="icon-btn" title="Toggle Scroll/Page mode" aria-label="Toggle Scroll">📄</button>
+        <button id="btn-view-mode" class="icon-btn" title="Toggle Scroll/Page mode" aria-label="Toggle Scroll">⏬</button>
         
         <button id="btn-font-dec" class="icon-btn" title="Decrease font size" aria-label="Decrease font size">A&#8722;</button>
         <button id="btn-font-inc" class="icon-btn" title="Increase font size" aria-label="Increase font size">A&#43;</button>
@@ -77,6 +82,15 @@
         <button id="btn-toc-close" class="icon-btn" aria-label="Close Sidebar">&times;</button>
       </div>
       <ul id="toc-list" class="toc-list"></ul>
+    </div>
+
+    <!-- File Tree Sidebar -->
+    <div id="file-tree-sidebar" class="sidebar">
+      <div class="sidebar-header">
+        <h3>Files</h3>
+        <button id="btn-file-tree-close" class="icon-btn" aria-label="Close Sidebar">&times;</button>
+      </div>
+      <ul id="file-tree-list" class="file-tree"></ul>
     </div>
 
     <!-- TXT viewer -->

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>epubReader</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="light">
+
+  <!-- Landing / file-picker screen -->
+  <div id="landing" class="screen active">
+    <div class="landing-card">
+      <h1 class="logo">📖 epubReader</h1>
+      <p class="tagline">A simple, beautiful reader for EPUB &amp; TXT novels</p>
+
+      <div id="drop-zone" class="drop-zone" role="button" tabindex="0"
+           aria-label="Drop a file here or click to choose">
+        <div class="drop-icon">⬆</div>
+        <p>Drop your <strong>.epub</strong> or <strong>.txt</strong> file here</p>
+        <p class="sub">or click to browse</p>
+      </div>
+      <input id="file-input" type="file" accept=".epub,.txt" hidden />
+
+      <p id="error-msg" class="error hidden"></p>
+    </div>
+  </div>
+
+  <!-- Reader screen -->
+  <div id="reader-screen" class="screen">
+
+    <!-- Top toolbar -->
+    <header class="toolbar">
+      <button id="btn-back" class="icon-btn" title="Back to file picker" aria-label="Back">&#8592;</button>
+      <span id="book-title" class="book-title"></span>
+      <div class="toolbar-right">
+        <button id="btn-font-dec" class="icon-btn" title="Decrease font size" aria-label="Decrease font size">A&#8722;</button>
+        <button id="btn-font-inc" class="icon-btn" title="Increase font size" aria-label="Increase font size">A&#43;</button>
+        <button id="btn-theme" class="icon-btn" title="Toggle dark/light mode" aria-label="Toggle theme">🌙</button>
+      </div>
+    </header>
+
+    <!-- EPUB viewer (epub.js renders here) -->
+    <div id="epub-viewer" class="viewer hidden"></div>
+
+    <!-- TXT viewer -->
+    <div id="txt-viewer" class="viewer hidden">
+      <div id="txt-content" class="txt-content"></div>
+    </div>
+
+    <!-- EPUB navigation arrows -->
+    <div id="epub-nav" class="nav-bar hidden">
+      <button id="btn-prev" class="nav-btn" aria-label="Previous page">&#8249;</button>
+      <span id="page-info" class="page-info"></span>
+      <button id="btn-next" class="nav-btn" aria-label="Next page">&#8250;</button>
+    </div>
+  </div>
+
+  <!-- epub.js from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

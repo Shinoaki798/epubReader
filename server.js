@@ -31,7 +31,7 @@ const server = http.createServer((req, res) => {
   }
 
   // Remove query params
-  let reqUrl = req.url.split("?")[0];
+  let reqUrl = decodeURIComponent(req.url.split("?")[0]);
 
   // API Route
   if (reqUrl === "/api/files" && req.method === "GET") {

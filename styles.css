@@ -473,11 +473,71 @@ html, body {
 ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 
 /* ===========================
-   Responsive
+   Responsive & iPhone 16 Adaptations
    =========================== */
-@media (max-width: 520px) {
-  .landing-card { padding: 32px 20px 28px; }
+@media (max-width: 600px) {
+  /* Landing page adaptations */
+  .landing-card {
+    padding: 32px 20px 28px;
+    border: none;
+    box-shadow: none;
+    background: transparent;
+  }
   .logo { font-size: 1.6rem; }
-  .icon-btn { padding: 5px 8px; }
+  .icon-btn { padding: 8px 12px; flex-shrink: 0; }
+  .toolbar-select { flex-shrink: 0; }
+  .slider-container { width: 100px; flex-shrink: 0; }
   .book-title { display: none; }
+
+  /* Re-define Toolbar Height including iOS Notch */
+  :root {
+    --toolbar-h: calc(56px + env(safe-area-inset-top));
+  }
+
+  /* Toolbar scrolling logic to prevent squishing */
+  .toolbar {
+    padding: env(safe-area-inset-top) max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
+    gap: 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+  }
+
+  /* Hide scrollbar on the toolbar */
+  .toolbar::-webkit-scrollbar { display: none; }
+
+  .toolbar-right {
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+
+  /* Slider adjustments for mobile */
+  .slider-container { width: 100px; }
+  
+  /* Safe area padding for the reading content */
+  #epub-viewer {
+    padding-left: max(20px, env(safe-area-inset-left));
+    padding-right: max(20px, env(safe-area-inset-right));
+  }
+
+  #txt-viewer {
+    padding-left: max(24px, env(safe-area-inset-left));
+    padding-right: max(24px, env(safe-area-inset-right));
+    padding-bottom: calc(80px + env(safe-area-inset-bottom));
+  }
+
+  /* Bottom nav bar safe area constraint */
+  .nav-bar {
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+    padding-left: max(24px, env(safe-area-inset-left));
+    padding-right: max(24px, env(safe-area-inset-right));
+    min-height: calc(48px + env(safe-area-inset-bottom));
+  }
+
+  /* Ensure sidebar handles the safe area well */
+  .sidebar {
+    padding-bottom: env(safe-area-inset-bottom);
+    width: 85vw; /* take up a bit less space */
+  }
 }

@@ -79,6 +79,8 @@ html, body {
   color: var(--accent);
   letter-spacing: -0.5px;
   margin-bottom: 8px;
+  text-align: center;
+  width: 100%;
 }
 
 .tagline {
@@ -162,10 +164,13 @@ html, body {
 }
 
 .book-title {
-  position: absolute;
-  left: 50%;
+  position: fixed;
+  left: 50vw;
+  top: env(safe-area-inset-top);
   transform: translateX(-50%);
-  max-width: calc(100% - 340px); /* clearance for left buttons + right toolbar group */
+  max-width: calc(100% - 340px); /* clearance */
+  height: 56px; /* original toolbar height */
+  line-height: 56px;
   font-size: 1rem;
   font-weight: 500;
   color: var(--text);
@@ -175,6 +180,7 @@ html, body {
   text-align: center;
   font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
   pointer-events: none;
+  z-index: 105;
 }
 
 .toolbar-right {
@@ -519,12 +525,15 @@ html, body {
   #epub-viewer {
     padding-left: max(20px, env(safe-area-inset-left));
     padding-right: max(20px, env(safe-area-inset-right));
+    padding-top: var(--toolbar-h);
+    padding-bottom: calc(48px + env(safe-area-inset-bottom));
   }
 
   #txt-viewer {
     padding-left: max(24px, env(safe-area-inset-left));
     padding-right: max(24px, env(safe-area-inset-right));
-    padding-bottom: calc(80px + env(safe-area-inset-bottom));
+    padding-top: var(--toolbar-h);
+    padding-bottom: calc(48px + env(safe-area-inset-bottom));
   }
 
   /* Bottom nav bar safe area constraint */
@@ -533,6 +542,14 @@ html, body {
     padding-left: max(24px, env(safe-area-inset-left));
     padding-right: max(24px, env(safe-area-inset-right));
     min-height: calc(48px + env(safe-area-inset-bottom));
+  }
+
+  /* Prevent bars from hiding on phones */
+  .toolbar.hidden-bar {
+    transform: none;
+  }
+  .nav-bar.hidden-bar {
+    transform: none;
   }
 
   /* Ensure sidebar handles the safe area well */

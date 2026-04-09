@@ -7,6 +7,9 @@ const landing = document.getElementById("landing");
 const readerScreen = document.getElementById("reader-screen");
 const dropZone = document.getElementById("drop-zone");
 const fileInput = document.getElementById("file-input");
+const folderInput = document.getElementById("folder-input");
+const btnBrowseFiles = document.getElementById("btn-browse-files");
+const btnBrowseFolder = document.getElementById("btn-browse-folder");
 const errorMsg = document.getElementById("error-msg");
 
 const bookTitle = document.getElementById("book-title");
@@ -21,6 +24,8 @@ const widthSlider = document.getElementById("width-slider");
 const btnViewMode = document.getElementById("btn-view-mode");
 
 const epubViewer = document.getElementById("epub-viewer");
+const overscrollTop = document.getElementById("overscroll-top");
+const overscrollBottom = document.getElementById("overscroll-bottom");
 const txtViewer = document.getElementById("txt-viewer");
 const txtContent = document.getElementById("txt-content");
 const epubNav = document.getElementById("epub-nav");
@@ -47,6 +52,50 @@ let currentMaxWidth = 720;
 let isScrollMode = true; // By default scrolled
 let scrollProgressUnlisten = null; // Cleanup fn for scroll-mode progress listener
 
+let isHoveringUI = false;
+let uiHideTimeout = null;
+const toolbar = document.querySelector(".toolbar");
+const navBar = document.querySelector(".nav-bar");
+
+toolbar.addEventListener("mouseenter", () => {
+  isHoveringUI = true;
+});
+toolbar.addEventListener("mouseleave", () => {
+  isHoveringUI = false;
+  resetUIHideTimer();
+});
+navBar.addEventListener("mouseenter", () => {
+  isHoveringUI = true;
+});
+navBar.addEventListener("mouseleave", () => {
+  isHoveringUI = false;
+  resetUIHideTimer();
+});
+
+function resetUIHideTimer() {
+  if (uiHideTimeout) clearTimeout(uiHideTimeout);
+  uiHideTimeout = setTimeout(() => {
+    if (readerScreen.classList.contains("active") && !isHoveringUI) {
+      if (toolbar) toolbar.classList.add("hidden-bar");
+      if (navBar) navBar.classList.add("hidden-bar");
+    }
+  }, 2500);
+}
+
+function handleUIMouseMove(e) {
+  if (!readerScreen.classList.contains("active")) return;
+  const isNearTop = e.clientY < 80;
+  const isNearBottom = e.clientY > window.innerHeight - 80;
+
+  if (isNearTop || isNearBottom || isHoveringUI) {
+    if (toolbar) toolbar.classList.remove("hidden-bar");
+    if (navBar) navBar.classList.remove("hidden-bar");
+    resetUIHideTimer();
+  }
+}
+
+document.addEventListener("mousemove", handleUIMouseMove);
+
 const FONT_SIZE_MIN = 12;
 const FONT_SIZE_MAX = 36;
 const FONT_SIZE_STEP = 2;
@@ -58,27 +107,39 @@ const FONT_SIZE_STEP = 2;
 function buildCustomCss() {
   const textColor = isDark ? "#e8e4de" : "#2c2b28";
   const bgColor = isDark ? "#252320" : "#ffffff";
-  return `
-* {
-  max-width: 100% !important;
-  box-sizing: border-box !important;
-}
-html, body, p, div, span, li, blockquote, td, th,
-h1, h2, h3, h4, h5, h6, rt, ruby {
-  line-height: ${currentLineHeight} !important;
-  font-family: ${currentFontFamily} !important;
-  word-wrap: break-word !important;
-}
+
+  let css = `
 html { font-size: ${fontSize}px !important; }
 html, body {
   color: ${textColor} !important;
   background: ${bgColor} !important;
+}
+html, body, p, div, span, li, blockquote, td, th, h1, h2, h3, h4, h5, h6, rt, ruby {
+  line-height: ${currentLineHeight} !important;
+  font-family: ${currentFontFamily} !important;
+  word-wrap: break-word !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+}`;
+
+  if (isScrollMode) {
+    css += `
+* {
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+html, body, div, p {
+  width: auto !important;
+}
+html, body {
   margin: 0 auto !important;
   padding: 0 !important;
 }
 body {
   padding: 0 16px !important;
 }`;
+  }
+  return css;
 }
 
 function injectCustomStyles() {
@@ -97,6 +158,69 @@ function injectCustomStyles() {
 }
 
 // ── Scroll-mode chapter progress listener ───────────────────────────────────
+let overscrollTimer = null;
+let topOverscroll = 0;
+let bottomOverscroll = 0;
+const OVERSCROLL_THRESHOLD = 200; // pixel distance equivalent to 100% "charge"
+
+function resetOverscroll() {
+  topOverscroll = 0;
+  bottomOverscroll = 0;
+  if (overscrollTop) {
+    overscrollTop.style.height = "0px";
+    overscrollTop.classList.remove("active");
+  }
+  if (overscrollBottom) {
+    overscrollBottom.style.height = "0px";
+    overscrollBottom.classList.remove("active");
+  }
+}
+
+function handleOverscroll(deltaY, container) {
+  if (Math.abs(deltaY) < 1) return;
+  const isAtTop = container.scrollTop <= 0;
+  const isAtBottom =
+    Math.ceil(container.scrollTop + container.clientHeight) >=
+    Math.floor(container.scrollHeight) - 5;
+
+  if (isAtTop && deltaY < 0) {
+    topOverscroll += Math.abs(deltaY);
+    let charge = Math.min(topOverscroll / OVERSCROLL_THRESHOLD, 1);
+    if (overscrollTop) {
+      overscrollTop.style.height = `${charge * 60}px`;
+      overscrollTop.classList.add("active");
+      overscrollTop.textContent =
+        charge >= 1 ? "Release to go to Previous Chapter" : "Previous Chapter";
+    }
+
+    if (charge >= 1) {
+      resetOverscroll();
+      currentRendition.prev();
+      return;
+    }
+  } else if (isAtBottom && deltaY > 0) {
+    bottomOverscroll += deltaY;
+    let charge = Math.min(bottomOverscroll / OVERSCROLL_THRESHOLD, 1);
+    if (overscrollBottom) {
+      overscrollBottom.style.height = `${charge * 60}px`;
+      overscrollBottom.classList.add("active");
+      overscrollBottom.textContent =
+        charge >= 1 ? "Release to go to Next Chapter" : "Next Chapter";
+    }
+
+    if (charge >= 1) {
+      resetOverscroll();
+      currentRendition.next();
+      return;
+    }
+  } else {
+    resetOverscroll();
+  }
+
+  clearTimeout(overscrollTimer);
+  overscrollTimer = setTimeout(resetOverscroll, 300);
+}
+
 function setupScrollProgressListener() {
   if (scrollProgressUnlisten) {
     scrollProgressUnlisten();
@@ -119,9 +243,32 @@ function setupScrollProgressListener() {
     pageInfo.textContent = `${val}%`;
   }
 
+  function onWheel(e) {
+    handleOverscroll(e.deltaY, container);
+  }
+
+  let touchStartY = 0;
+  function onTouchStart(e) {
+    touchStartY = e.touches[0].clientY;
+  }
+  function onTouchMove(e) {
+    const currentY = e.touches[0].clientY;
+    const deltaY = touchStartY - currentY;
+    handleOverscroll(deltaY, container);
+    touchStartY = currentY;
+  }
+
   container.addEventListener("scroll", onScroll, { passive: true });
-  scrollProgressUnlisten = () =>
+  container.addEventListener("wheel", onWheel, { passive: false });
+  container.addEventListener("touchstart", onTouchStart, { passive: true });
+  container.addEventListener("touchmove", onTouchMove, { passive: false });
+
+  scrollProgressUnlisten = () => {
     container.removeEventListener("scroll", onScroll);
+    container.removeEventListener("wheel", onWheel);
+    container.removeEventListener("touchstart", onTouchStart);
+    container.removeEventListener("touchmove", onTouchMove);
+  };
 }
 
 // ── localStorage helpers ─────────────────────────────────────────────────────
@@ -262,17 +409,25 @@ function showLanding() {
   landing.classList.add("active");
   errorMsg.textContent = "";
   errorMsg.classList.add("hidden");
+  if (toolbar) toolbar.classList.remove("hidden-bar");
+  if (navBar) navBar.classList.remove("hidden-bar");
+  if (uiHideTimeout) clearTimeout(uiHideTimeout);
 }
 
 function showReader() {
   landing.classList.remove("active");
   readerScreen.classList.add("active");
+  if (toolbar) toolbar.classList.remove("hidden-bar");
+  if (navBar) navBar.classList.remove("hidden-bar");
+  resetUIHideTimer();
 }
 
 document.addEventListener("dragover", (e) => e.preventDefault());
 document.addEventListener("drop", (e) => e.preventDefault());
 
-dropZone.addEventListener("click", () => fileInput.click());
+btnBrowseFiles.addEventListener("click", () => fileInput.click());
+btnBrowseFolder.addEventListener("click", () => folderInput.click());
+
 dropZone.addEventListener("keydown", (e) => {
   if (e.key === "Enter" || e.key === " ") {
     e.preventDefault();
@@ -417,8 +572,57 @@ fileInput.addEventListener("change", () => {
   fileInput.value = ""; // reset so the same file can be re-selected
 });
 
+folderInput.addEventListener("change", () => {
+  const files = Array.from(folderInput.files).filter(
+    (f) =>
+      f.name.toLowerCase().endsWith(".epub") ||
+      f.name.toLowerCase().endsWith(".txt"),
+  );
+
+  if (files.length === 0) {
+    showError("No EPUB or TXT files found in the selected folder.");
+  } else {
+    // Basic root-level "folder" node for consistency in tree view
+    if (files[0].webkitRelativePath) {
+      const folderName = files[0].webkitRelativePath.split("/")[0];
+      const folderNode = { name: folderName, isDir: true, children: [] };
+      files.forEach((f) => {
+        folderNode.children.push({ name: f.name, isDir: false, file: f });
+      });
+      btnFileTreeToggle.classList.remove("hidden");
+      renderFileTree([folderNode], fileTreeList);
+
+      const lastFileRelPath = localStorage.getItem(
+        "epubReader_last_file_" + folderName,
+      );
+      let targetFile = null;
+      if (lastFileRelPath) {
+        targetFile = files.find(
+          (f) => f.webkitRelativePath === lastFileRelPath,
+        );
+      }
+
+      if (targetFile) {
+        handleFile(targetFile);
+      } else {
+        destroyCurrentBook();
+        showReader();
+        fileTreeSidebar.classList.add("active");
+      }
+    }
+  }
+  folderInput.value = "";
+});
+
 // ── File handling ────────────────────────────────────────────────────────────
 function handleFile(file) {
+  if (file.webkitRelativePath) {
+    const folderName = file.webkitRelativePath.split("/")[0];
+    localStorage.setItem(
+      "epubReader_last_file_" + folderName,
+      file.webkitRelativePath,
+    );
+  }
   const name = file.name.toLowerCase();
   if (name.endsWith(".epub")) {
     loadEpub(file);
@@ -610,8 +814,29 @@ function updatePageInfo(location) {
 
 function epubKeyHandler(e) {
   if (!currentRendition) return;
-  if (e.key === "ArrowRight" || e.key === "ArrowDown") currentRendition.next();
-  if (e.key === "ArrowLeft" || e.key === "ArrowUp") currentRendition.prev();
+
+  const container =
+    currentRendition.manager && currentRendition.manager.container;
+
+  // Left/Right navigate chapters
+  if (e.key === "ArrowRight") currentRendition.next();
+  if (e.key === "ArrowLeft") currentRendition.prev();
+
+  // Up/Down purely scroll
+  if (isScrollMode && container) {
+    const amount = 50;
+    if (e.key === "ArrowDown") {
+      container.scrollBy({ top: amount });
+      e.preventDefault();
+    }
+    if (e.key === "ArrowUp") {
+      container.scrollBy({ top: -amount });
+      e.preventDefault();
+    }
+  } else if (!isScrollMode) {
+    if (e.key === "ArrowDown") currentRendition.next();
+    if (e.key === "ArrowUp") currentRendition.prev();
+  }
 }
 
 btnNext.addEventListener("click", () => {

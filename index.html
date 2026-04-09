@@ -19,12 +19,14 @@
       <p class="tagline">A simple, beautiful reader for EPUB &amp; TXT novels</p>
 
       <div id="drop-zone" class="drop-zone" role="button" tabindex="0"
-           aria-label="Drop a file or folder here or click to choose">
-        <div class="drop-icon">⬆</div>
-        <p>Drop your <strong>.epub</strong> / <strong>.txt</strong> file or a <strong>Folder</strong> here</p>
-        <p class="sub">or click to browse</p>
+           aria-label="Drop a file here or click to choose">
+        <div class="drop-icon">📖</div>
+        <p>Drop your <strong>.epub</strong> / <strong>.txt</strong> file here</p>
+        <p class="sub">or click to <span id="btn-browse-files" style="cursor:pointer; color:var(--accent); text-decoration:underline;">browse files</span></p>
+        <p class="sub" style="margin-top: 8px; color:var(--text-muted); font-size: 0.8rem;">Folders can only be opened using the <span id="btn-browse-folder" style="cursor:pointer; color:var(--accent); text-decoration:underline;">browse folder</span> button.</p>
       </div>
-      <input id="file-input" type="file" accept=".epub,.txt" hidden />
+      <input id="file-input" type="file" accept=".epub,.txt" multiple hidden />
+      <input id="folder-input" type="file" webkitdirectory directory hidden />
 
       <p id="error-msg" class="error hidden"></p>
     </div>
@@ -70,7 +72,10 @@
     </header>
 
     <!-- EPUB viewer (epub.js renders here) -->
-    <div id="epub-viewer" class="viewer hidden"></div>
+    <div id="epub-viewer" class="viewer hidden">
+      <div id="overscroll-top" class="overscroll-indicator top"></div>
+      <div id="overscroll-bottom" class="overscroll-indicator bottom"></div>
+    </div>
 
     <!-- TOC overlay (click to close) -->
     <div id="toc-overlay" class="toc-overlay"></div>

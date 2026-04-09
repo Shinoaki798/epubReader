@@ -10,7 +10,9 @@ const fileInput = document.getElementById("file-input");
 const folderInput = document.getElementById("folder-input");
 const btnBrowseFiles = document.getElementById("btn-browse-files");
 const btnBrowseFolder = document.getElementById("btn-browse-folder");
+const btnLoadServer = document.getElementById("btn-load-server");
 const errorMsg = document.getElementById("error-msg");
+const btnContinueStored = document.getElementById("btn-continue-stored");
 
 const bookTitle = document.getElementById("book-title");
 const btnBack = document.getElementById("btn-back");
@@ -24,8 +26,6 @@ const widthSlider = document.getElementById("width-slider");
 const btnViewMode = document.getElementById("btn-view-mode");
 
 const epubViewer = document.getElementById("epub-viewer");
-const overscrollTop = document.getElementById("overscroll-top");
-const overscrollBottom = document.getElementById("overscroll-bottom");
 const txtViewer = document.getElementById("txt-viewer");
 const txtContent = document.getElementById("txt-content");
 const epubNav = document.getElementById("epub-nav");
@@ -48,6 +48,59 @@ let fontSize = 24; // px, applies to both epub & txt
 let isDark = false;
 let currentFontFamily = "'LXGW WenKai Lite', 'KaiTi', serif";
 let currentLineHeight = 1.85;
+
+// --- IndexedDB for Directory Handles ---
+const DB_NAME = "EpubReaderDB";
+const STORE_NAME = "DirectoryHandles";
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, 1);
+    request.onupgradeneeded = (e) => {
+      e.target.result.createObjectStore(STORE_NAME);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function saveDirectoryHandle(handle) {
+  const db = await openDB();
+  const tx = db.transaction(STORE_NAME, "readwrite");
+  tx.objectStore(STORE_NAME).put(handle, "folder-handle");
+  return new Promise((resolve) => {
+    tx.oncomplete = resolve;
+  });
+}
+
+async function getDirectoryHandle() {
+  const db = await openDB();
+  const tx = db.transaction(STORE_NAME, "readonly");
+  const request = tx.objectStore(STORE_NAME).get("folder-handle");
+  return new Promise((resolve) => {
+    request.onsuccess = () => resolve(request.result);
+  });
+}
+
+async function verifyPermission(fileHandle, readWrite) {
+  const options = {};
+  if (readWrite) options.mode = "readwrite";
+  if ((await fileHandle.queryPermission(options)) === "granted") return true;
+  if ((await fileHandle.requestPermission(options)) === "granted") return true;
+  return false;
+}
+
+(async function initStoredData() {
+  try {
+    const handle = await getDirectoryHandle();
+    if (handle) {
+      if (btnContinueStored) btnContinueStored.classList.remove("hidden");
+    }
+  } catch (e) {
+    console.error("No valid handle in IndexedDB", e);
+  }
+})();
+
 let currentMaxWidth = 720;
 let isScrollMode = true; // By default scrolled
 let scrollProgressUnlisten = null; // Cleanup fn for scroll-mode progress listener
@@ -158,69 +211,6 @@ function injectCustomStyles() {
 }
 
 // ── Scroll-mode chapter progress listener ───────────────────────────────────
-let overscrollTimer = null;
-let topOverscroll = 0;
-let bottomOverscroll = 0;
-const OVERSCROLL_THRESHOLD = 200; // pixel distance equivalent to 100% "charge"
-
-function resetOverscroll() {
-  topOverscroll = 0;
-  bottomOverscroll = 0;
-  if (overscrollTop) {
-    overscrollTop.style.height = "0px";
-    overscrollTop.classList.remove("active");
-  }
-  if (overscrollBottom) {
-    overscrollBottom.style.height = "0px";
-    overscrollBottom.classList.remove("active");
-  }
-}
-
-function handleOverscroll(deltaY, container) {
-  if (Math.abs(deltaY) < 1) return;
-  const isAtTop = container.scrollTop <= 0;
-  const isAtBottom =
-    Math.ceil(container.scrollTop + container.clientHeight) >=
-    Math.floor(container.scrollHeight) - 5;
-
-  if (isAtTop && deltaY < 0) {
-    topOverscroll += Math.abs(deltaY);
-    let charge = Math.min(topOverscroll / OVERSCROLL_THRESHOLD, 1);
-    if (overscrollTop) {
-      overscrollTop.style.height = `${charge * 60}px`;
-      overscrollTop.classList.add("active");
-      overscrollTop.textContent =
-        charge >= 1 ? "Release to go to Previous Chapter" : "Previous Chapter";
-    }
-
-    if (charge >= 1) {
-      resetOverscroll();
-      currentRendition.prev();
-      return;
-    }
-  } else if (isAtBottom && deltaY > 0) {
-    bottomOverscroll += deltaY;
-    let charge = Math.min(bottomOverscroll / OVERSCROLL_THRESHOLD, 1);
-    if (overscrollBottom) {
-      overscrollBottom.style.height = `${charge * 60}px`;
-      overscrollBottom.classList.add("active");
-      overscrollBottom.textContent =
-        charge >= 1 ? "Release to go to Next Chapter" : "Next Chapter";
-    }
-
-    if (charge >= 1) {
-      resetOverscroll();
-      currentRendition.next();
-      return;
-    }
-  } else {
-    resetOverscroll();
-  }
-
-  clearTimeout(overscrollTimer);
-  overscrollTimer = setTimeout(resetOverscroll, 300);
-}
-
 function setupScrollProgressListener() {
   if (scrollProgressUnlisten) {
     scrollProgressUnlisten();
@@ -243,31 +233,9 @@ function setupScrollProgressListener() {
     pageInfo.textContent = `${val}%`;
   }
 
-  function onWheel(e) {
-    handleOverscroll(e.deltaY, container);
-  }
-
-  let touchStartY = 0;
-  function onTouchStart(e) {
-    touchStartY = e.touches[0].clientY;
-  }
-  function onTouchMove(e) {
-    const currentY = e.touches[0].clientY;
-    const deltaY = touchStartY - currentY;
-    handleOverscroll(deltaY, container);
-    touchStartY = currentY;
-  }
-
   container.addEventListener("scroll", onScroll, { passive: true });
-  container.addEventListener("wheel", onWheel, { passive: false });
-  container.addEventListener("touchstart", onTouchStart, { passive: true });
-  container.addEventListener("touchmove", onTouchMove, { passive: false });
-
   scrollProgressUnlisten = () => {
     container.removeEventListener("scroll", onScroll);
-    container.removeEventListener("wheel", onWheel);
-    container.removeEventListener("touchstart", onTouchStart);
-    container.removeEventListener("touchmove", onTouchMove);
   };
 }
 
@@ -426,7 +394,6 @@ document.addEventListener("dragover", (e) => e.preventDefault());
 document.addEventListener("drop", (e) => e.preventDefault());
 
 btnBrowseFiles.addEventListener("click", () => fileInput.click());
-btnBrowseFolder.addEventListener("click", () => folderInput.click());
 
 dropZone.addEventListener("keydown", (e) => {
   if (e.key === "Enter" || e.key === " ") {
@@ -460,8 +427,9 @@ dropZone.addEventListener("drop", async (e) => {
       errorMsg.classList.remove("hidden");
     }
 
-    const results = await Promise.all(entries.map((entry) => scanEntry(entry)));
-    for (const result of results) {
+    for (let i = 0; i < entries.length; i++) {
+      if (i % 5 === 0) await new Promise((r) => setTimeout(r, 0));
+      const result = await scanEntry(entries[i]);
       if (result) nodes.push(result);
     }
 
@@ -513,10 +481,10 @@ async function scanEntry(entry) {
       read();
     });
     const children = [];
-    const childResults = await Promise.all(
-      entries.map((childEntry) => scanEntry(childEntry)),
-    );
-    for (const child of childResults) {
+    for (const childEntry of entries) {
+      if (children.length % 20 === 0)
+        await new Promise((r) => setTimeout(r, 0));
+      const child = await scanEntry(childEntry);
       if (child) children.push(child);
     }
     if (children.length > 0) return { name: entry.name, isDir: true, children };
@@ -525,36 +493,51 @@ async function scanEntry(entry) {
   return null;
 }
 
-function renderFileTree(nodes, container) {
-  container.innerHTML = "";
+function renderFileTree(nodes, parentElement, depth = 0) {
+  if (depth === 0) parentElement.innerHTML = "";
+
   nodes.forEach((node) => {
     const li = document.createElement("li");
+    const a = document.createElement("a");
+    a.href = "#";
+    a.style.paddingLeft = `${depth * 1.5 + 1}rem`;
+    a.textContent = (node.isDir ? "📁 " : "📄 ") + node.name;
+
     if (node.isDir) {
-      const span = document.createElement("span");
-      span.textContent = "📁 " + node.name;
-      span.className = "folder-label";
-      span.title = node.name;
-      span.onclick = () => {
-        const ul = li.querySelector("ul");
-        if (ul) ul.classList.toggle("hidden");
-      };
-      li.appendChild(span);
-      const ul = document.createElement("ul");
-      renderFileTree(node.children, ul);
-      li.appendChild(ul);
-    } else {
-      const a = document.createElement("a");
-      a.title = node.name;
-      a.textContent =
-        (node.name.toLowerCase().endsWith(".epub") ? "📘 " : "📄 ") + node.name;
-      a.onclick = () => {
-        fileTreeSidebar.classList.remove("active");
-        if (tocOverlay) tocOverlay.classList.remove("active");
-        handleFile(node.file);
-      };
+      a.style.fontWeight = "bold";
+
+      const childrenContainer = document.createElement("ul");
+      childrenContainer.className = "file-tree-sub";
+      childrenContainer.style.display = "none";
+
+      a.addEventListener("click", (e) => {
+        e.preventDefault();
+        const isHidden = childrenContainer.style.display === "none";
+        childrenContainer.style.display = isHidden ? "block" : "none";
+      });
       li.appendChild(a);
+      li.appendChild(childrenContainer);
+      parentElement.appendChild(li);
+
+      renderFileTree(node.children, childrenContainer, depth + 1);
+    } else {
+      a.addEventListener("click", (e) => {
+        e.preventDefault();
+        handleFile(node.file);
+
+        const allLinks = fileTreeList.querySelectorAll("a");
+        allLinks.forEach((link) => link.classList.remove("active"));
+        a.classList.add("active");
+
+        if (window.innerWidth <= 768) {
+          fileTreeSidebar.classList.remove("active");
+          if (typeof tocOverlay !== "undefined" && tocOverlay)
+            tocOverlay.classList.remove("active");
+        }
+      });
+      li.appendChild(a);
+      parentElement.appendChild(li);
     }
-    container.appendChild(li);
   });
 }
 
@@ -572,50 +555,205 @@ fileInput.addEventListener("change", () => {
   fileInput.value = ""; // reset so the same file can be re-selected
 });
 
-folderInput.addEventListener("change", () => {
-  const files = Array.from(folderInput.files).filter(
-    (f) =>
-      f.name.toLowerCase().endsWith(".epub") ||
-      f.name.toLowerCase().endsWith(".txt"),
-  );
+if (btnContinueStored) {
+  btnContinueStored.addEventListener("click", async () => {
+    try {
+      const handle = await getDirectoryHandle();
+      if (!handle) return;
+      if (await verifyPermission(handle, false)) {
+        await processDirectoryHandle(handle);
+      }
+    } catch (e) {
+      showError("Failed to load stored directory.");
+    }
+  });
+}
 
-  if (files.length === 0) {
-    showError("No EPUB or TXT files found in the selected folder.");
-  } else {
-    // Basic root-level "folder" node for consistency in tree view
-    if (files[0].webkitRelativePath) {
-      const folderName = files[0].webkitRelativePath.split("/")[0];
-      const folderNode = { name: folderName, isDir: true, children: [] };
-      files.forEach((f) => {
-        folderNode.children.push({ name: f.name, isDir: false, file: f });
-      });
-      btnFileTreeToggle.classList.remove("hidden");
-      renderFileTree([folderNode], fileTreeList);
+btnBrowseFolder.addEventListener("click", async () => {
+  try {
+    const handle = await window.showDirectoryPicker();
+    await saveDirectoryHandle(handle);
+    if (btnContinueStored) btnContinueStored.classList.remove("hidden");
+    await processDirectoryHandle(handle);
+  } catch (e) {
+    console.error(e);
+  }
+});
 
-      const lastFileRelPath = localStorage.getItem(
-        "epubReader_last_file_" + folderName,
-      );
-      let targetFile = null;
-      if (lastFileRelPath) {
-        targetFile = files.find(
-          (f) => f.webkitRelativePath === lastFileRelPath,
+async function processDirectoryHandle(dirHandle) {
+  try {
+    const rootNode = { name: dirHandle.name, isDir: true, children: [] };
+    await scanDirectoryHandle(dirHandle, rootNode, dirHandle.name);
+
+    if (rootNode.children.length === 0) {
+      showError("No EPUB or TXT files found in the folder.");
+      return;
+    }
+
+    btnFileTreeToggle.classList.remove("hidden");
+    renderFileTree([rootNode], fileTreeList);
+
+    const lastFileRelPath = localStorage.getItem(
+      "epubReader_last_file_" + rootNode.name,
+    );
+    let targetFile = null;
+
+    if (lastFileRelPath) {
+      targetFile = findFileInTree(rootNode, lastFileRelPath);
+    }
+
+    if (targetFile) {
+      handleFile(targetFile);
+    } else {
+      destroyCurrentBook();
+      showReader();
+      fileTreeSidebar.classList.add("active");
+    }
+  } catch (e) {
+    showError("Error scanning folder");
+    console.error(e);
+  }
+}
+
+if (btnLoadServer) {
+  btnLoadServer.addEventListener("click", async () => {
+    try {
+      errorMsg.textContent = "Loading library from server...";
+      errorMsg.classList.remove("hidden");
+      const baseUrl =
+        window.location.protocol === "file:" ? "http://localhost:3000" : "";
+      const res = await fetch(baseUrl + "/api/files");
+      if (!res.ok)
+        throw new Error("Server API not available. Did you start server.js?");
+      const data = await res.json();
+      if (!data.success)
+        throw new Error(data.error || "Failed to load directory.");
+
+      const rootNode = data.rootNode;
+      if (!rootNode.children || rootNode.children.length === 0) {
+        showError(
+          "No EPUB or TXT files found in the 'Stored' folder on the server.",
         );
+        return;
       }
 
-      if (targetFile) {
-        handleFile(targetFile);
-      } else {
+      const hydrateNodeFiles = (node) => {
+        if (node.isDir) {
+          node.children.forEach(hydrateNodeFiles);
+        } else {
+          node.file = {
+            name: node.name,
+            webkitRelativePath: node.path.substring(1), // Remove leading slash
+            isRemote: true,
+            url: node.path,
+            size: 0, // Mock size for storage key
+          };
+        }
+      };
+      hydrateNodeFiles(rootNode);
+
+      errorMsg.classList.add("hidden");
+      btnFileTreeToggle.classList.remove("hidden");
+      renderFileTree([rootNode], fileTreeList);
+
+      const lastFileRelPath = localStorage.getItem(
+        "epubReader_last_file_" + rootNode.name,
+      );
+      let targetFile = null;
+      if (lastFileRelPath)
+        targetFile = findFileInTree(rootNode, lastFileRelPath);
+
+      if (targetFile) handleFile(targetFile);
+      else {
         destroyCurrentBook();
         showReader();
         fileTreeSidebar.classList.add("active");
       }
+    } catch (e) {
+      showError(e.message || "Cannot connect to server API");
+    }
+  });
+}
+
+function findFileInTree(node, path) {
+  if (!node.isDir && node.file && node.file.webkitRelativePath === path)
+    return node.file;
+  if (node.children) {
+    for (const child of node.children) {
+      const found = findFileInTree(child, path);
+      if (found) return found;
     }
   }
-  folderInput.value = "";
-});
+  return null;
+}
+
+async function scanDirectoryHandle(dirHandle, parentNode, currentPath) {
+  for await (const entry of dirHandle.values()) {
+    if (entry.kind === "file") {
+      if (
+        entry.name.toLowerCase().endsWith(".epub") ||
+        entry.name.toLowerCase().endsWith(".txt")
+      ) {
+        const file = await entry.getFile();
+        Object.defineProperty(file, "webkitRelativePath", {
+          value: currentPath + "/" + file.name,
+        });
+        parentNode.children.push({ name: file.name, isDir: false, file: file });
+      }
+    } else if (entry.kind === "directory") {
+      const childNode = { name: entry.name, isDir: true, children: [] };
+      await scanDirectoryHandle(
+        entry,
+        childNode,
+        currentPath + "/" + entry.name,
+      );
+      if (childNode.children.length > 0) {
+        parentNode.children.push(childNode);
+      }
+    }
+  }
+  parentNode.children.sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { numeric: true }),
+  );
+}
 
 // ── File handling ────────────────────────────────────────────────────────────
+
+async function fetchRemoteFile(fileMeta) {
+  try {
+    errorMsg.textContent = "Downloading " + fileMeta.name + "...";
+    errorMsg.classList.remove("hidden");
+
+    // Attempt cache first? We can just fetch it directly
+    const baseUrl =
+      window.location.protocol === "file:" ? "http://localhost:3000" : "";
+    const res = await fetch(baseUrl + fileMeta.url);
+    if (!res.ok) throw new Error("Failed to fetch file from server.");
+    const blob = await res.blob();
+
+    // Construct a faux File object
+    const f = new File([blob], fileMeta.name, { type: blob.type });
+    Object.defineProperty(f, "webkitRelativePath", {
+      value: fileMeta.webkitRelativePath,
+    });
+
+    errorMsg.classList.add("hidden");
+    // Call the original synchronous handler now that it's physically in memory
+    handleLocalFile(f);
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
 function handleFile(file) {
+  if (file.isRemote) {
+    fetchRemoteFile(file);
+    return;
+  }
+  handleLocalFile(file);
+}
+
+function handleLocalFile(file) {
   if (file.webkitRelativePath) {
     const folderName = file.webkitRelativePath.split("/")[0];
     localStorage.setItem(
